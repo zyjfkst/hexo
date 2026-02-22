@@ -9,7 +9,7 @@ description: 'Dont touch my init.el!!!!'
 keywords:
 author: zyj_archer
 language: zh_CN
-timezone: 'UTC+8:00'
+timezone: ''
 
 # URL
 ## Set your site url here. For example, if you use GitHub Page, set url as 'https://username.github.io/project'
