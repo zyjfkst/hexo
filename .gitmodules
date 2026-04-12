@@ -1,0 +1,6 @@
+[submodule "hexo-theme-quark"]
+	path = hexo-theme-quark
+	url = https://github.com/Pcrab/hexo-theme-quark
+[submodule "themes/next"]
+	path = themes/next
+	url = https://github.com/next-theme/hexo-theme-next
