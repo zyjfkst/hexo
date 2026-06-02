@@ -1,0 +1,636 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>绿屏心电图仪 | 按住空格显示动态心电图</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            user-select: none;
+        }
+
+        body {
+            background: radial-gradient(circle at 20% 30%, #0a0f1a, #030507);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-family: 'Courier New', 'Fira Code', monospace;
+            padding: 20px;
+        }
+
+        .crt-container {
+            background: #000000;
+            border-radius: 28px;
+            padding: 20px 20px 24px;
+            box-shadow: 0 20px 35px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(80, 255, 80, 0.1);
+            border: 1px solid #1a3a1a;
+        }
+
+        .screen {
+            background: #031003;
+            border-radius: 16px;
+            padding: 12px;
+            box-shadow: inset 0 0 30px rgba(0, 20, 0, 0.8), 0 0 0 2px #2a6e2a;
+            position: relative;
+        }
+
+        canvas {
+            display: block;
+            width: 100%;
+            height: auto;
+            background: #010c01;
+            border-radius: 12px;
+            box-shadow: 0 0 0 1px #2aff6e20, 0 0 0 2px #0f3f0f;
+            cursor: crosshair;
+        }
+
+        .scanlines {
+            pointer-events: none;
+            position: relative;
+            overflow: hidden;
+        }
+        .scanlines::before {
+            content: "";
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: repeating-linear-gradient(
+                0deg,
+                rgba(0, 255, 0, 0.02) 0px,
+                rgba(0, 255, 0, 0.02) 2px,
+                transparent 2px,
+                transparent 4px
+            );
+            pointer-events: none;
+            z-index: 2;
+            border-radius: 12px;
+        }
+
+        .info-panel {
+            margin-top: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 12px;
+            background: #071007cc;
+            backdrop-filter: blur(2px);
+            padding: 10px 18px;
+            border-radius: 40px;
+            border-left: 3px solid #2eff6e;
+            font-weight: bold;
+        }
+
+        .status {
+            color: #b3ffbc;
+            text-shadow: 0 0 3px #00cc33;
+            font-size: 0.85rem;
+            letter-spacing: 1px;
+            background: #0c1a0c;
+            padding: 4px 12px;
+            border-radius: 24px;
+            font-family: monospace;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .key-hint {
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap;
+        }
+
+        .key {
+            background: #1e2a1a;
+            color: #adffa7;
+            padding: 5px 12px;
+            border-radius: 30px;
+            font-family: monospace;
+            font-weight: bold;
+            font-size: 0.85rem;
+            letter-spacing: 1px;
+            backdrop-filter: blur(4px);
+            border: 1px solid #4aff6e;
+            box-shadow: 0 0 4px #14ff5e;
+        }
+
+        .key kbd {
+            background: #000000aa;
+            padding: 2px 8px;
+            border-radius: 30px;
+            color: #caffa2;
+            margin-right: 6px;
+            font-weight: bold;
+            border: 1px solid #88ff88;
+            font-size: 0.8rem;
+        }
+
+        .feedback {
+            font-size: 0.7rem;
+            background: #0f1f0f;
+            padding: 4px 12px;
+            border-radius: 40px;
+            color: #94ff94;
+            font-family: monospace;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .indicator {
+            width: 10px;
+            height: 10px;
+            background-color: #2eff5e;
+            border-radius: 50%;
+            box-shadow: 0 0 6px #00ff40;
+            transition: 0.1s;
+        }
+        .indicator.blink {
+            background-color: #ffff80;
+            box-shadow: 0 0 12px #ffff00;
+            transform: scale(1.2);
+        }
+
+        .footer {
+            font-size: 0.7rem;
+            text-align: center;
+            color: #3f8440;
+            margin-top: 16px;
+            font-family: monospace;
+        }
+
+        @keyframes subtlePulse {
+            0% { text-shadow: 0 0 1px #0f0; }
+            100% { text-shadow: 0 0 6px #2eff6e; }
+        }
+        .status span {
+            animation: subtlePulse 1.5s infinite alternate;
+        }
+    </style>
+</head>
+<body>
+<div class="crt-container">
+    <div class="screen scanlines">
+        <canvas id="waveCanvas" width="900" height="400" style="width:100%; height:auto; max-width:1000px; aspect-ratio:900/400"></canvas>
+    </div>
+    <div class="info-panel">
+        <div class="status">
+            ⚡ <span>GREEN SCREEN MODE</span> ⚡
+            <div class="feedback">
+                <div class="indicator" id="keyIndicator"></div>
+                <span id="actionCount">触发:0</span>
+            </div>
+        </div>
+        <div class="key-hint">
+            <div class="key"><kbd>␣</kbd> 按住 → 动态心电图</div>
+            <div class="key"><kbd>R</kbd> 重置直线</div>
+        </div>
+    </div>
+    <div class="footer">
+        ✦ 心电图形状 ✦ 按住空格显示动态心电图波形 ✦ 松开恢复直线 ✦
+    </div>
+</div>
+
+<script>
+    (function(){
+        // ----- DOM 元素 -----
+        const canvas = document.getElementById('waveCanvas');
+        const ctx = canvas.getContext('2d');
+        const indicator = document.getElementById('keyIndicator');
+        const actionCountSpan = document.getElementById('actionCount');
+        
+        // 固定尺寸
+        const WIDTH = 900;
+        const HEIGHT = 400;
+        canvas.width = WIDTH;
+        canvas.height = HEIGHT;
+        const CENTER_Y = HEIGHT / 2;   // 基线位置
+        
+        // 心电图参数
+        let ecgParams = null;            // 当前心电图参数 { freq, rAmp, tAmp, baselineDrift, pAmp, qsAmp }
+        let isLineMode = true;           // true=直线模式, false=心电图模式
+        let spacePressed = false;        // 空格是否按着
+        let generatedOnPress = false;    // 本次按下是否已经生成参数
+        let triggerCount = 0;            // 按下次数统计
+        
+        // 动态刷新相关 (模拟心电图滚动)
+        let animationId = null;
+        let lastTimestamp = 0;
+        let globalPhase = 0;              // 用于心电图的滚动相位（周期流动）
+        const PHASE_SPEED = 0.022;        // 滚动速度（快速刷新效果，使波形持续向左移动）
+        
+        // ----- UI 辅助: 闪烁指示器 & 计数 -----
+        function blinkIndicator() {
+            if (!indicator) return;
+            indicator.classList.add('blink');
+            setTimeout(() => {
+                indicator.classList.remove('blink');
+            }, 120);
+        }
+        
+        function incrementTriggerCount() {
+            triggerCount++;
+            if (actionCountSpan) {
+                actionCountSpan.innerText = `触发:${triggerCount}`;
+            }
+            blinkIndicator();
+        }
+        
+        // ----- 绘制复古网格 (科技感)-----
+        function drawGrid() {
+            ctx.save();
+            ctx.strokeStyle = "#1d5520";
+            ctx.lineWidth = 0.6;
+            ctx.shadowBlur = 0;
+            for (let x = 0; x <= WIDTH; x += 60) {
+                ctx.beginPath();
+                ctx.moveTo(x, 0);
+                ctx.lineTo(x, HEIGHT);
+                ctx.stroke();
+            }
+            for (let y = 0; y <= HEIGHT; y += 40) {
+                ctx.beginPath();
+                ctx.moveTo(0, y);
+                ctx.lineTo(WIDTH, y);
+                ctx.stroke();
+            }
+            ctx.beginPath();
+            ctx.moveTo(0, CENTER_Y);
+            ctx.lineTo(WIDTH, CENTER_Y);
+            ctx.strokeStyle = "#4eff6e80";
+            ctx.lineWidth = 1;
+            ctx.stroke();
+            ctx.restore();
+        }
+        
+        // ----- 绘制静态直线 (基线)-----
+        function drawStraightLine() {
+            ctx.clearRect(0, 0, WIDTH, HEIGHT);
+            drawGrid();
+            ctx.save();
+            ctx.beginPath();
+            ctx.moveTo(0, CENTER_Y);
+            ctx.lineTo(WIDTH, CENTER_Y);
+            ctx.strokeStyle = "#3eff5e";
+            ctx.lineWidth = 2.8;
+            ctx.shadowColor = "#1aff4d";
+            ctx.shadowBlur = 6;
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(0, CENTER_Y);
+            ctx.lineTo(WIDTH, CENTER_Y);
+            ctx.strokeStyle = "#ccffaa";
+            ctx.lineWidth = 1.2;
+            ctx.shadowBlur = 3;
+            ctx.stroke();
+            ctx.fillStyle = "#5aff6e";
+            ctx.shadowBlur = 4;
+            ctx.beginPath();
+            ctx.arc(0, CENTER_Y, 2, 0, Math.PI*2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(WIDTH, CENTER_Y, 2, 0, Math.PI*2);
+            ctx.fill();
+            ctx.restore();
+            ctx.font = "10px 'Courier New', monospace";
+            ctx.fillStyle = "#49b849";
+            ctx.fillText("✦ BASELINE LOCK ✦", WIDTH-110, HEIGHT-8);
+        }
+        
+        // ----- 核心: 心电波形函数 (基于相位 angle, 范围 0~2PI 内模拟一个完整心跳周期) -----
+        // 参数: angle (弧度), params { rAmp, tAmp, pAmp, qsAmp, baselineDrift }
+        // 返回归一化幅值 (以基线为0, 范围约 -0.8 ~ 1.2 之间, 后续再乘幅度系数)
+        function getNormalizedECG(angle, params) {
+            // 将 angle 归一化到 [0, 2PI]
+            let t = angle % (Math.PI * 2);
+            // 定义心电图各段区间 (基于真实心电形态简化):
+            // 0 ~ 0.12: P波 (小隆起)
+            // 0.12 ~ 0.2: PR段 (基线)
+            // 0.2 ~ 0.35: QRS波群 (尖锐负-正-负)
+            // 0.35 ~ 0.6: ST段 + T波 (正向隆起)
+            // 0.6 ~ 1.0: 缓慢回到基线
+            let value = 0;
+            
+            // 提取参数, 带默认随机范围
+            let rAmp = params.rAmp;       // R波峰值幅度 (正)
+            let tAmp = params.tAmp;       // T波幅度 (正)
+            let pAmp = params.pAmp;       // P波幅度 (小正)
+            let qsAmp = params.qsAmp;     // Q/S波深度 (负)
+            
+            // 分段拟合更真实的心电图
+            if (t < 0.12) {
+                // P 波区域: 正弦形状隆起
+                let phaseP = (t / 0.12) * Math.PI;
+                value = pAmp * Math.sin(phaseP);
+            } 
+            else if (t < 0.18) {
+                // PR 段 (基本平直)
+                value = 0;
+            }
+            else if (t < 0.32) {
+                // QRS 复合波: 快速负-正-负, 模拟心电尖峰
+                let qrsT = (t - 0.18) / 0.14;  // 0..1
+                if (qrsT < 0.25) {
+                    // Q波 (小负向)
+                    let qFactor = 1 - (qrsT / 0.25);
+                    value = -qsAmp * 0.6 * qFactor;
+                } 
+                else if (qrsT < 0.55) {
+                    // R波 (高大尖峰)
+                    let rFactor = Math.sin(((qrsT - 0.25) / 0.3) * Math.PI);
+                    value = rAmp * rFactor;
+                } 
+                else {
+                    // S波 (负向)
+                    let sFactor = 1 - ((qrsT - 0.55) / 0.45);
+                    value = -qsAmp * sFactor;
+                }
+            }
+            else if (t < 0.5) {
+                // ST段 + T波起始
+                let stT = (t - 0.32) / 0.18;
+                // 平滑过渡到T波峰值
+                let tRise = Math.sin(stT * Math.PI * 0.8);
+                value = tAmp * tRise * 0.7;
+            }
+            else if (t < 0.75) {
+                // T波主体
+                let tPhase = (t - 0.5) / 0.25;
+                let tShape = Math.sin(tPhase * Math.PI);
+                value = tAmp * tShape;
+            }
+            else {
+                // 恢复基线
+                let restPhase = (t - 0.75) / 0.25;
+                value = tAmp * (1 - restPhase) * 0.2;
+                if (value < 0) value = 0;
+            }
+            
+            // 添加微弱的基线漂移 (低频正弦)
+            let drift = params.baselineDrift * Math.sin(angle * 0.5);
+            value += drift;
+            
+            // 钳制在合理范围
+            return Math.min(0.95, Math.max(-0.65, value));
+        }
+        
+        // 根据 x 像素位置计算心电图幅值 (相对基线偏移, 单位像素)
+        // 整体滚动相位: globalPhase 控制波形滚动 (如心电图走纸)
+        function getECGOffsetY(x, params, phaseShift) {
+            // 将 x 映射到相位周期: 每个完整心跳周期占用的像素宽度 = 周期长度 (周期长度与心率有关)
+            // params.freq 控制心率 (周期长度 = 2*PI / freq ? 更直观：周期像素长度 = width / cycles )
+            // 为方便使用频率系数: 每个完整周期对应2*PI弧度，x从0到WIDTH经历 cycles = (WIDTH / periodPx) 个周期
+            // 但更简单：相位 = (x / periodScale + phaseShift) * 2*PI
+            // 让周期视觉效果舒适: 默认让大约 180~300px 一个完整心跳，因此设定 baseFreq = 0.025 ~ 0.045 之间
+            let heartFreq = params.freq;   // 约 0.022 ~ 0.045 之间
+            let angle = (x * heartFreq) + phaseShift;
+            let normValue = getNormalizedECG(angle, params);
+            // 幅度缩放: 最大偏移量控制在 70~110 像素之间，使波形明显但不超出边界
+            let maxOffset = params.ampScale;   // 振幅缩放 (像素)
+            let offsetY = normValue * maxOffset;
+            return offsetY;
+        }
+        
+        // ----- 绘制心电图波形 (基于当前参数和滚动相位)-----
+        function drawECGWaveform(params, phaseShift) {
+            if (!params) {
+                drawStraightLine();
+                return;
+            }
+            ctx.clearRect(0, 0, WIDTH, HEIGHT);
+            drawGrid();
+            ctx.save();
+            ctx.beginPath();
+            let firstY = CENTER_Y + getECGOffsetY(0, params, phaseShift);
+            ctx.moveTo(0, firstY);
+            for (let x = 1; x <= WIDTH; x++) {
+                let offset = getECGOffsetY(x, params, phaseShift);
+                let y = CENTER_Y + offset;
+                // 边界保护
+                let clampedY = Math.min(HEIGHT - 5, Math.max(5, y));
+                ctx.lineTo(x, clampedY);
+            }
+            ctx.strokeStyle = "#3eff6e";
+            ctx.lineWidth = 2.4;
+            ctx.shadowColor = "#1eff5a";
+            ctx.shadowBlur = 5;
+            ctx.stroke();
+            // 增加第二层细光晕
+            ctx.beginPath();
+            ctx.moveTo(0, firstY);
+            for (let x = 1; x <= WIDTH; x++) {
+                let offset = getECGOffsetY(x, params, phaseShift);
+                let y = CENTER_Y + offset;
+                let clampedY = Math.min(HEIGHT - 5, Math.max(5, y));
+                ctx.lineTo(x, clampedY);
+            }
+            ctx.strokeStyle = "#b0ffb0";
+            ctx.lineWidth = 0.9;
+            ctx.shadowBlur = 2;
+            ctx.stroke();
+            // 端点光点装饰
+            let endY = CENTER_Y + getECGOffsetY(WIDTH, params, phaseShift);
+            ctx.fillStyle = "#8eff9e";
+            ctx.shadowBlur = 4;
+            ctx.beginPath();
+            ctx.arc(0, Math.min(HEIGHT-5, Math.max(5, firstY)), 2.5, 0, Math.PI*2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(WIDTH, Math.min(HEIGHT-5, Math.max(5, endY)), 2.5, 0, Math.PI*2);
+            ctx.fill();
+            ctx.restore();
+            ctx.font = "9px 'Courier New', monospace";
+            ctx.fillStyle = "#7eff86";
+            let hrText = `❤️ ECG MODE | HR:${Math.floor(60 + params.freq*800)}bpm ❤️`;
+            ctx.fillText(hrText, WIDTH-210, HEIGHT-10);
+        }
+        
+        // ----- 生成随机心电图参数 (每次按下空格产生随机特征)-----
+        function generateRandomECGParams() {
+            // 心率 (freq) 影响压缩程度: 越高心率越快，周期越短，0.022~0.045 范围
+            const freq = 0.022 + Math.random() * 0.026;
+            // R波幅度 (像素偏移) 范围 45~95
+            const rAmp = 45 + Math.random() * 55;
+            // T波幅度 范围 20~55
+            const tAmp = 20 + Math.random() * 40;
+            // P波幅度 5~18
+            const pAmp = 5 + Math.random() * 14;
+            // Q/S波深度 (负向) 范围 18~48
+            const qsAmp = 18 + Math.random() * 32;
+            // 基线漂移幅度 (±4~12 像素)
+            const baselineDrift = (Math.random() * 6 + 2) * (Math.random() > 0.5 ? 1 : -1);
+            // 整体振幅缩放系数 (保证波形在屏幕内不过于夸张)
+            let ampScale = rAmp * 0.9;   // 总体偏移幅度基于R波峰值
+            if (ampScale > 95) ampScale = 95;
+            if (ampScale < 40) ampScale = 45;
+            
+            return {
+                freq: freq,
+                rAmp: rAmp,
+                tAmp: tAmp,
+                pAmp: pAmp,
+                qsAmp: qsAmp,
+                baselineDrift: baselineDrift,
+                ampScale: ampScale
+            };
+        }
+        
+        // ----- 停止动画循环 -----
+        function stopAnimation() {
+            if (animationId !== null) {
+                cancelAnimationFrame(animationId);
+                animationId = null;
+            }
+        }
+        
+        // ----- 启动动态刷新 (心电图滚动)-----
+        function startECGAnimation() {
+            if (animationId !== null) stopAnimation();
+            lastTimestamp = performance.now();
+            // 全局相位不清零，让波形从当前相位继续滚动，使得心电连续，但是每次新生成参数时重置相位更合适
+            function animate(now) {
+                if (!isLineMode && ecgParams && spacePressed) {
+                    if (lastTimestamp !== 0) {
+                        let delta = Math.min(32, now - lastTimestamp);
+                        // 快速滚动相位，实现波形向左流动的效果（模拟走纸）
+                        globalPhase += delta * PHASE_SPEED;
+                        // 保持相位在合理范围 (不影响计算)
+                        if (globalPhase > Math.PI * 2) globalPhase -= Math.PI * 2;
+                    }
+                    lastTimestamp = now;
+                    drawECGWaveform(ecgParams, globalPhase);
+                    animationId = requestAnimationFrame(animate);
+                } else {
+                    stopAnimation();
+                }
+            }
+            animationId = requestAnimationFrame(animate);
+        }
+        
+        // ----- 按下空格：生成随机心电图参数，启动动态心电图模式 -----
+        function startECGAndFlow() {
+            if (spacePressed) return;
+            spacePressed = true;
+            generatedOnPress = false;
+            if (!generatedOnPress) {
+                ecgParams = generateRandomECGParams();
+                generatedOnPress = true;
+                incrementTriggerCount();
+                // 重置相位，使心电图从初始点开始滚动，避免跳跃
+                globalPhase = 0;
+            }
+            isLineMode = false;
+            lastTimestamp = performance.now();
+            drawECGWaveform(ecgParams, globalPhase);
+            stopAnimation();
+            startECGAnimation();
+            const statusSpan = document.querySelector('.status span');
+            if (statusSpan) statusSpan.innerHTML = `❤️ ECG DYNAMIC ❤️`;
+        }
+        
+        // ----- 松开空格：恢复直线模式，停止所有动画-----
+        function resetToLine() {
+            if (!spacePressed && isLineMode) return;
+            spacePressed = false;
+            generatedOnPress = false;
+            stopAnimation();
+            isLineMode = true;
+            ecgParams = null;
+            globalPhase = 0;
+            drawStraightLine();
+            const statusSpan = document.querySelector('.status span');
+            if (statusSpan) statusSpan.innerHTML = `⚡ GREEN SCREEN MODE ⚡`;
+        }
+        
+        // ----- 强制重置 (R键) 无论空格状态，强制直线-----
+        function forceReset() {
+            stopAnimation();
+            spacePressed = false;
+            generatedOnPress = false;
+            isLineMode = true;
+            ecgParams = null;
+            globalPhase = 0;
+            drawStraightLine();
+            const statusSpan = document.querySelector('.status span');
+            if (statusSpan) statusSpan.innerHTML = `⚡ GREEN SCREEN MODE ⚡`;
+        }
+        
+        // ----- 键盘事件处理 (按下、松开)-----
+        function handleKeyDown(e) {
+            const key = e.code;
+            if (key === 'Space') {
+                e.preventDefault();
+                e.stopPropagation();
+                if (!spacePressed) {
+                    startECGAndFlow();
+                }
+                return false;
+            }
+            else if (key === 'KeyR') {
+                e.preventDefault();
+                e.stopPropagation();
+                forceReset();
+                return false;
+            }
+            return true;
+        }
+        
+        function handleKeyUp(e) {
+            const key = e.code;
+            if (key === 'Space') {
+                e.preventDefault();
+                e.stopPropagation();
+                if (spacePressed) {
+                    resetToLine();
+                }
+                return false;
+            }
+            return true;
+        }
+        
+        // 窗口失焦时强制复位，避免卡状态
+        function handleBlur() {
+            if (spacePressed) {
+                resetToLine();
+            }
+        }
+        
+        // ----- 绑定全局事件 (捕获阶段保障响应)-----
+        function bindEvents() {
+            window.addEventListener('keydown', handleKeyDown, true);
+            document.addEventListener('keydown', handleKeyDown, true);
+            window.addEventListener('keyup', handleKeyUp, true);
+            document.addEventListener('keyup', handleKeyUp, true);
+            window.addEventListener('blur', handleBlur);
+        }
+        
+        // ----- 初始化: 直线模式 ---- 
+        function init() {
+            drawStraightLine();
+            isLineMode = true;
+            spacePressed = false;
+            generatedOnPress = false;
+            ecgParams = null;
+            globalPhase = 0;
+            triggerCount = 0;
+            if (actionCountSpan) actionCountSpan.innerText = `触发:0`;
+            bindEvents();
+            canvas.addEventListener('click', () => {
+                canvas.style.boxShadow = '0 0 0 2px #6eff6e80';
+                setTimeout(() => { canvas.style.boxShadow = ''; }, 200);
+            });
+            console.log("✅ 绿屏心电图仪 | 按住空格 → 动态心电图 (心电特征明显) | 松开恢复直线");
+        }
+        
+        window.addEventListener('load', init);
+    })();
+</script>
+</body>
+</html>
