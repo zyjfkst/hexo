@@ -11,3 +11,5 @@ tags:
   * ctlib
   * 无啦qwq
 都来玩！！！！qwq
+
+- changed domain to 28.tcp.cpolar.top:14063 
