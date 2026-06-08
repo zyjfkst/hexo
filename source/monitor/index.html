@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>绿屏心电图仪 | 按住空格持续蜂鸣 + 动态心电图</title>
+    <title>绿屏心电图仪 | 刷新线特效 + 方箭头</title>
     <style>
         * {
             margin: 0;
@@ -189,12 +189,14 @@
             </div>
         </div>
         <div class="key-hint">
-            <div class="key"><kbd>␣</kbd> 按住 → 持续蜂鸣 + 动态心电图</div>
-            <div class="key"><kbd>R</kbd> 重置直线</div>
+            <div class="key"><kbd>␣</kbd> 波形+断续滴滴</div>
+            <div class="key"><kbd>R</kbd> 终止+2秒长鸣</div>
+            <div class="key"><kbd>1</kbd> 带圈对号✓</div>
+            <div class="key"><kbd>2</kbd> 方箭头→</div>
         </div>
     </div>
     <div class="footer">
-        ✦ 按住空格：持续880Hz蜂鸣声 + 动态心电图 ✦ 松开即停止蜂鸣并恢复直线 ✦
+        ✦ 刷新线特效：线后方一段波形隐藏，再后方恢复 ✦ 按下空格：动态心电图 + 断续滴滴声 ✦ 按 R 键：停止所有，恢复直线 ✦ 1键对号 / 2键方箭头 ✦
     </div>
 </div>
 
@@ -213,11 +215,10 @@
         canvas.height = HEIGHT;
         const CENTER_Y = HEIGHT / 2;
         
-        // 心电图参数
-        let ecgParams = null;
-        let isLineMode = true;
-        let spacePressed = false;
-        let generatedOnPress = false;
+        // 状态变量
+        let ecgParams = null;           
+        let isWaveActive = false;       
+        let beepEnabled = false;        
         let triggerCount = 0;
         
         // 动态刷新相关
@@ -226,13 +227,21 @@
         let globalPhase = 0;
         const PHASE_SPEED = 0.022;
         
-        // ========== 持续蜂鸣音效模块 ==========
-        let audioCtx = null;
-        let activeOscillator = null;      // 当前激活的振荡器
-        let activeGain = null;             // 音量控制
-        let isBeeping = false;
+        // 覆盖层符号显示
+        let overlayActive = false;
+        let overlayType = null;
+        let overlayEndTime = 0;
         
-        // 初始化音频上下文 (懒加载，首次用户交互时创建)
+        // ========== 刷新线特效 ==========
+        let scanX = 0;                      // 刷新线X坐标
+        const SCAN_SPEED = 1.6;             // 移动速度 (像素/帧)
+        const ERASE_WIDTH = 60;              // 线后方隐藏宽度（像素）
+        
+        // ========== 音效模块 ==========
+        let audioCtx = null;
+        let beepInterval = null;
+        let longBeepOsc = null;
+        
         function initAudio() {
             if (audioCtx) return;
             try {
@@ -243,80 +252,86 @@
             }
         }
         
-        // 开始持续蜂鸣 (880Hz 正弦波)
-        function startContinuousBeep() {
+        function playShortBeep() {
             if (!audioCtx) {
                 initAudio();
                 if (!audioCtx) return;
             }
-            // 如果已经处于蜂鸣状态，不重复创建
-            if (isBeeping) return;
-            
-            // 确保音频上下文处于运行状态（用户手势恢复）
-            const startOsc = () => {
-                if (audioCtx.state === 'closed') return;
+            const actuallyPlay = () => {
                 try {
-                    // 创建振荡器和增益节点
+                    const now = audioCtx.currentTime;
                     const osc = audioCtx.createOscillator();
                     const gain = audioCtx.createGain();
                     osc.connect(gain);
                     gain.connect(audioCtx.destination);
-                    
                     osc.type = 'sine';
-                    osc.frequency.value = 880;   // 典型蜂鸣频率
-                    gain.gain.value = 0.25;       // 音量适中
-                    
-                    osc.start();
-                    // 保存以便后续停止
-                    activeOscillator = osc;
-                    activeGain = gain;
-                    isBeeping = true;
-                    
-                    // 可选: 振荡器结束时自动清理
-                    osc.onended = () => {
-                        if (activeOscillator === osc) {
-                            activeOscillator = null;
-                            activeGain = null;
-                            isBeeping = false;
-                        }
-                    };
-                } catch(e) {
-                    console.warn("Start continuous beep failed", e);
-                }
+                    osc.frequency.value = 880;
+                    gain.gain.setValueAtTime(0.25, now);
+                    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.1);
+                    osc.start(now);
+                    osc.stop(now + 0.1);
+                } catch(e) {}
             };
-            
             if (audioCtx.state === 'suspended') {
-                audioCtx.resume().then(() => {
-                    console.log("AudioContext resumed for beep");
-                    startOsc();
-                }).catch(err => console.warn("Resume failed", err));
+                audioCtx.resume().then(actuallyPlay).catch(e=>console.warn);
             } else {
-                startOsc();
+                actuallyPlay();
             }
         }
         
-        // 停止持续蜂鸣 (平滑静音)
-        function stopContinuousBeep() {
-            if (!isBeeping) return;
-            if (activeGain) {
-                // 快速淡出避免爆音
-                const now = audioCtx ? audioCtx.currentTime : 0;
-                try {
-                    activeGain.gain.setValueAtTime(activeGain.gain.value, now);
-                    activeGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.05);
-                } catch(e) {}
-            }
-            if (activeOscillator) {
-                try {
-                    activeOscillator.stop();
-                } catch(e) {}
-                activeOscillator = null;
-            }
-            activeGain = null;
-            isBeeping = false;
+        function startIntermittentBeep() {
+            if (beepInterval !== null) return;
+            playShortBeep();
+            beepInterval = setInterval(() => {
+                if (beepEnabled) {
+                    playShortBeep();
+                } else {
+                    stopIntermittentBeep();
+                }
+            }, 300);
         }
         
-        // ----- UI 辅助 -----
+        function stopIntermittentBeep() {
+            if (beepInterval !== null) {
+                clearInterval(beepInterval);
+                beepInterval = null;
+            }
+        }
+        
+        function playContinuousBeep2Seconds() {
+            if (!audioCtx) {
+                initAudio();
+                if (!audioCtx) return;
+            }
+            if (longBeepOsc) {
+                try { longBeepOsc.stop(); } catch(e) {}
+                longBeepOsc = null;
+            }
+            const actuallyPlay = () => {
+                try {
+                    const osc = audioCtx.createOscillator();
+                    const gain = audioCtx.createGain();
+                    osc.connect(gain);
+                    gain.connect(audioCtx.destination);
+                    osc.type = 'sine';
+                    osc.frequency.value = 880;
+                    gain.gain.value = 0.25;
+                    const now = audioCtx.currentTime;
+                    gain.gain.setValueAtTime(0.25, now);
+                    gain.gain.exponentialRampToValueAtTime(0.0001, now + 2.0);
+                    osc.start(now);
+                    osc.stop(now + 2.0);
+                    longBeepOsc = osc;
+                    osc.onended = () => { if (longBeepOsc === osc) longBeepOsc = null; };
+                } catch(e) {}
+            };
+            if (audioCtx.state === 'suspended') {
+                audioCtx.resume().then(actuallyPlay).catch(e=>console.warn);
+            } else {
+                actuallyPlay();
+            }
+        }
+        
         function blinkIndicator() {
             if (!indicator) return;
             indicator.classList.add('blink');
@@ -329,7 +344,7 @@
             blinkIndicator();
         }
         
-        // ========== 绘制基础 ==========
+        // ========== 绘图函数 ==========
         function drawGrid() {
             ctx.save();
             ctx.strokeStyle = "#1d5520";
@@ -445,54 +460,204 @@
             return normValue * maxOffset;
         }
         
-        function drawECGWaveform(params, phaseShift) {
+        // 获取波形点数组
+        function getCurrentWaveformPoints(params, phaseShift) {
+            let points = [];
+            for (let x = 0; x <= WIDTH; x++) {
+                let offset = getECGOffsetY(x, params, phaseShift);
+                let y = CENTER_Y + offset;
+                let clampedY = Math.min(HEIGHT - 5, Math.max(5, y));
+                points.push({x, y: clampedY});
+            }
+            return points;
+        }
+        
+        // 绘制带刷新线特效的心电图（线后方一段隐藏）
+        function drawECGWaveformWithRefreshLine(params, phaseShift) {
             if (!params) {
                 drawStraightLine();
                 return;
             }
+            let points = getCurrentWaveformPoints(params, phaseShift);
+            
+            // 绘制网格
             ctx.clearRect(0, 0, WIDTH, HEIGHT);
             drawGrid();
+            
+            // 定义擦除区间：[scanX - ERASE_WIDTH, scanX] 内的波形不显示
+            const eraseStart = scanX - ERASE_WIDTH;
+            const eraseEnd = scanX;
+            
+            // 分段绘制波形：将连续的可显示区域（不在擦除区间内）分成若干路径
+            let segments = [];
+            let currentSegment = null;
+            for (let i = 0; i < points.length; i++) {
+                const x = points[i].x;
+                const isVisible = (x < eraseStart || x > eraseEnd);
+                if (isVisible) {
+                    if (currentSegment === null) {
+                        currentSegment = { startIdx: i, points: [] };
+                    }
+                    currentSegment.points.push(points[i]);
+                } else {
+                    if (currentSegment !== null) {
+                        segments.push(currentSegment);
+                        currentSegment = null;
+                    }
+                }
+            }
+            if (currentSegment !== null) {
+                segments.push(currentSegment);
+            }
+            
+            // 绘制所有可见线段
             ctx.save();
             ctx.beginPath();
-            let firstY = CENTER_Y + getECGOffsetY(0, params, phaseShift);
-            ctx.moveTo(0, firstY);
-            for (let x = 1; x <= WIDTH; x++) {
-                let offset = getECGOffsetY(x, params, phaseShift);
-                let y = CENTER_Y + offset;
-                let clampedY = Math.min(HEIGHT - 5, Math.max(5, y));
-                ctx.lineTo(x, clampedY);
+            for (let seg of segments) {
+                let segPoints = seg.points;
+                if (segPoints.length === 0) continue;
+                ctx.moveTo(segPoints[0].x, segPoints[0].y);
+                for (let i = 1; i < segPoints.length; i++) {
+                    ctx.lineTo(segPoints[i].x, segPoints[i].y);
+                }
             }
             ctx.strokeStyle = "#3eff6e";
             ctx.lineWidth = 2.4;
             ctx.shadowColor = "#1eff5a";
             ctx.shadowBlur = 5;
             ctx.stroke();
+            
+            // 高光细线
             ctx.beginPath();
-            ctx.moveTo(0, firstY);
-            for (let x = 1; x <= WIDTH; x++) {
-                let offset = getECGOffsetY(x, params, phaseShift);
-                let y = CENTER_Y + offset;
-                let clampedY = Math.min(HEIGHT - 5, Math.max(5, y));
-                ctx.lineTo(x, clampedY);
+            for (let seg of segments) {
+                let segPoints = seg.points;
+                if (segPoints.length === 0) continue;
+                ctx.moveTo(segPoints[0].x, segPoints[0].y);
+                for (let i = 1; i < segPoints.length; i++) {
+                    ctx.lineTo(segPoints[i].x, segPoints[i].y);
+                }
             }
             ctx.strokeStyle = "#b0ffb0";
-            ctx.lineWidth = 0.9;
+            ctx.lineWidth = 1;
             ctx.shadowBlur = 2;
             ctx.stroke();
-            let endY = CENTER_Y + getECGOffsetY(WIDTH, params, phaseShift);
-            ctx.fillStyle = "#8eff9e";
-            ctx.shadowBlur = 4;
-            ctx.beginPath();
-            ctx.arc(0, Math.min(HEIGHT-5, Math.max(5, firstY)), 2.5, 0, Math.PI*2);
-            ctx.fill();
-            ctx.beginPath();
-            ctx.arc(WIDTH, Math.min(HEIGHT-5, Math.max(5, endY)), 2.5, 0, Math.PI*2);
-            ctx.fill();
+            
+            // 端点光点（仅显示可显示的端点）
+            for (let seg of segments) {
+                let pts = seg.points;
+                if (pts.length === 0) continue;
+                ctx.fillStyle = "#8eff9e";
+                ctx.shadowBlur = 4;
+                ctx.beginPath();
+                ctx.arc(pts[0].x, pts[0].y, 2.5, 0, Math.PI*2);
+                ctx.fill();
+                ctx.beginPath();
+                ctx.arc(pts[pts.length-1].x, pts[pts.length-1].y, 2.5, 0, Math.PI*2);
+                ctx.fill();
+            }
             ctx.restore();
+            
+            // 绘制刷新线（垂直亮线）
+            ctx.save();
+            ctx.shadowBlur = 0;
+            ctx.beginPath();
+            ctx.moveTo(scanX, 0);
+            ctx.lineTo(scanX, HEIGHT);
+            ctx.strokeStyle = "#ffffaa";
+            ctx.lineWidth = 2;
+            ctx.stroke();
+            // 增加光晕
+            ctx.beginPath();
+            ctx.moveTo(scanX, 0);
+            ctx.lineTo(scanX, HEIGHT);
+            ctx.strokeStyle = "#ffff88";
+            ctx.lineWidth = 1;
+            ctx.stroke();
+            // 添加半透明背景强调
+            ctx.fillStyle = "#ffffaa20";
+            ctx.fillRect(scanX - 1, 0, 3, HEIGHT);
+            ctx.restore();
+            
+            // 心率文本
             ctx.font = "9px 'Courier New', monospace";
             ctx.fillStyle = "#7eff86";
             let hrText = `❤️ ECG MODE | HR:${Math.floor(60 + params.freq*800)}bpm ❤️`;
             ctx.fillText(hrText, WIDTH-210, HEIGHT-10);
+        }
+        
+        // 绘制覆盖层（网格+符号）
+        function drawOverlay() {
+            ctx.clearRect(0, 0, WIDTH, HEIGHT);
+            drawGrid();
+            if (overlayType === 'checkmark') {
+                drawCheckmarkOnly();
+            } else if (overlayType === 'arrow') {
+                drawRightArrowOnly();
+            }
+        }
+        
+        function drawCheckmarkOnly() {
+            const centerX = WIDTH / 2;
+            const centerY = HEIGHT / 2;
+            const radius = 60;
+            ctx.save();
+            ctx.shadowBlur = 0;
+            ctx.beginPath();
+            ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+            ctx.strokeStyle = "#5eff6e";
+            ctx.lineWidth = 4;
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.arc(centerX, centerY, radius-2, 0, Math.PI * 2);
+            ctx.strokeStyle = "#aaffaa";
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+            ctx.beginPath();
+            const offset = 28;
+            ctx.moveTo(centerX - offset, centerY);
+            ctx.lineTo(centerX - 8, centerY + offset - 5);
+            ctx.lineTo(centerX + offset - 5, centerY - offset + 8);
+            ctx.strokeStyle = "#cfff9e";
+            ctx.lineWidth = 5;
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.arc(centerX, centerY, radius-8, 0, Math.PI * 2);
+            ctx.strokeStyle = "#2eff6e30";
+            ctx.lineWidth = 2;
+            ctx.stroke();
+            ctx.restore();
+        }
+        
+        function drawRightArrowOnly() {
+            const centerX = WIDTH / 2;
+            const centerY = HEIGHT / 2;
+            const arrowLength = 130;
+            const stemWidth = 22;
+            const headWidth = 52;
+            const headDepth = 38;
+            ctx.save();
+            ctx.shadowBlur = 0;
+            const startX = centerX - arrowLength/2 + 8;
+            const stemEndX = centerX + arrowLength/2 - headDepth;
+            ctx.fillStyle = "#5eff6e";
+            ctx.fillRect(startX, centerY - stemWidth/2, stemEndX - startX, stemWidth);
+            ctx.beginPath();
+            ctx.moveTo(stemEndX, centerY - headWidth/2);
+            ctx.lineTo(centerX + arrowLength/2, centerY);
+            ctx.lineTo(stemEndX, centerY + headWidth/2);
+            ctx.fill();
+            ctx.fillStyle = "#aaffaa";
+            ctx.fillRect(startX + 4, centerY - stemWidth/2 + 3, stemEndX - startX - 8, stemWidth - 6);
+            ctx.beginPath();
+            ctx.moveTo(stemEndX + 2, centerY - headWidth/2 + 5);
+            ctx.lineTo(centerX + arrowLength/2 - 2, centerY);
+            ctx.lineTo(stemEndX + 2, centerY + headWidth/2 - 5);
+            ctx.fill();
+            ctx.fillStyle = "#8effa0";
+            ctx.fillRect(startX - 6, centerY - 12, 12, 24);
+            ctx.restore();
         }
         
         function generateRandomECGParams() {
@@ -508,83 +673,133 @@
             return { freq, rAmp, tAmp, pAmp, qsAmp, baselineDrift, ampScale };
         }
         
-        function stopAnimation() {
-            if (animationId !== null) {
-                cancelAnimationFrame(animationId);
-                animationId = null;
-            }
-        }
-        
-        function startECGAnimation() {
-            if (animationId !== null) stopAnimation();
-            lastTimestamp = performance.now();
+        // 动画循环
+        function startAnimationLoop() {
+            if (animationId !== null) return;
             function animate(now) {
-                if (!isLineMode && ecgParams && spacePressed) {
-                    if (lastTimestamp !== 0) {
-                        let delta = Math.min(32, now - lastTimestamp);
-                        globalPhase += delta * PHASE_SPEED;
-                        if (globalPhase > Math.PI * 2) globalPhase -= Math.PI * 2;
-                    }
-                    lastTimestamp = now;
-                    drawECGWaveform(ecgParams, globalPhase);
-                    animationId = requestAnimationFrame(animate);
-                } else {
-                    stopAnimation();
+                if (lastTimestamp !== 0 && isWaveActive && ecgParams && !overlayActive) {
+                    let delta = Math.min(32, now - lastTimestamp);
+                    globalPhase += delta * PHASE_SPEED;
+                    if (globalPhase > Math.PI * 2) globalPhase -= Math.PI * 2;
                 }
+                lastTimestamp = now;
+                
+                // 更新刷新线位置（仅在波形活跃且无覆盖层时移动）
+                if (isWaveActive && ecgParams && !overlayActive) {
+                    scanX += SCAN_SPEED;
+                    if (scanX > WIDTH + ERASE_WIDTH) {
+                        scanX = -ERASE_WIDTH; // 循环回到左侧外
+                    }
+                } else {
+                    // 非波形模式，线移到左侧外
+                    if (scanX > WIDTH) scanX = -ERASE_WIDTH;
+                }
+                
+                if (overlayActive) {
+                    if (now < overlayEndTime) {
+                        drawOverlay();
+                    } else {
+                        overlayActive = false;
+                        overlayType = null;
+                    }
+                }
+                
+                if (!overlayActive) {
+                    if (isWaveActive && ecgParams) {
+                        drawECGWaveformWithRefreshLine(ecgParams, globalPhase);
+                    } else {
+                        drawStraightLine();
+                    }
+                }
+                
+                animationId = requestAnimationFrame(animate);
             }
             animationId = requestAnimationFrame(animate);
         }
         
-        // 按下空格: 生成心电图参数，启动心电图动画，开始持续蜂鸣
-        function startECGAndFlow() {
-            if (spacePressed) return;
-            spacePressed = true;
-            generatedOnPress = false;
-            if (!generatedOnPress) {
-                ecgParams = generateRandomECGParams();
-                generatedOnPress = true;
-                incrementTriggerCount();
-                globalPhase = 0;
+        function clearOverlay() {
+            overlayActive = false;
+            overlayType = null;
+        }
+        
+        function showCheckmark() {
+            clearOverlay();
+            overlayActive = true;
+            overlayType = 'checkmark';
+            overlayEndTime = performance.now() + 1500;
+            const statusSpan = document.querySelector('.status span');
+            if (statusSpan) {
+                statusSpan.innerHTML = `✓ CHECKMARK ✓`;
+                setTimeout(() => {
+                    if (statusSpan && !overlayActive) {
+                        if (isWaveActive) statusSpan.innerHTML = `❤️ ECG + CONTINUOUS BEEP ❤️`;
+                        else if (!isWaveActive && !beepEnabled) statusSpan.innerHTML = `⚡ GREEN SCREEN MODE ⚡`;
+                    }
+                }, 1200);
             }
-            isLineMode = false;
+        }
+        
+        function showArrow() {
+            clearOverlay();
+            overlayActive = true;
+            overlayType = 'arrow';
+            overlayEndTime = performance.now() + 1500;
+            const statusSpan = document.querySelector('.status span');
+            if (statusSpan) {
+                statusSpan.innerHTML = `→ SQUARE ARROW →`;
+                setTimeout(() => {
+                    if (statusSpan && !overlayActive) {
+                        if (isWaveActive) statusSpan.innerHTML = `❤️ ECG + CONTINUOUS BEEP ❤️`;
+                        else if (!isWaveActive && !beepEnabled) statusSpan.innerHTML = `⚡ GREEN SCREEN MODE ⚡`;
+                    }
+                }, 1200);
+            }
+        }
+        
+        function onSpaceDown() {
+            clearOverlay();
+            ecgParams = generateRandomECGParams();
+            isWaveActive = true;
+            globalPhase = 0;
             lastTimestamp = performance.now();
-            drawECGWaveform(ecgParams, globalPhase);
-            stopAnimation();
-            startECGAnimation();
-            // 启动持续蜂鸣
-            startContinuousBeep();
+            incrementTriggerCount();
+            if (!animationId) startAnimationLoop();
+            if (!beepEnabled) {
+                beepEnabled = true;
+                startIntermittentBeep();
+            }
             const statusSpan = document.querySelector('.status span');
-            if (statusSpan) statusSpan.innerHTML = `❤️ ECG + BEEP ❤️`;
+            if (statusSpan) statusSpan.innerHTML = `❤️ ECG + CONTINUOUS BEEP ❤️`;
         }
         
-        // 松开空格: 停止蜂鸣，恢复直线模式
-        function resetToLine() {
-            if (!spacePressed && isLineMode) return;
-            spacePressed = false;
-            generatedOnPress = false;
-            stopAnimation();
-            // 停止蜂鸣
-            stopContinuousBeep();
-            isLineMode = true;
+        function onSpaceUp() {
+            // 保持状态
+        }
+        
+        function onRKey() {
+            clearOverlay();
+            beepEnabled = false;
+            stopIntermittentBeep();
+            isWaveActive = false;
             ecgParams = null;
             globalPhase = 0;
             drawStraightLine();
+            playContinuousBeep2Seconds();
             const statusSpan = document.querySelector('.status span');
-            if (statusSpan) statusSpan.innerHTML = `⚡ GREEN SCREEN MODE ⚡`;
+            if (statusSpan) statusSpan.innerHTML = `⚠️ 2s BEEP → LINE ⚠️`;
+            setTimeout(() => {
+                if (statusSpan && !isWaveActive && !beepEnabled && !overlayActive) {
+                    statusSpan.innerHTML = `⚡ GREEN SCREEN MODE ⚡`;
+                }
+            }, 2100);
         }
         
-        // 强制重置（R键）
-        function forceReset() {
-            stopAnimation();
-            stopContinuousBeep();
-            spacePressed = false;
-            generatedOnPress = false;
-            isLineMode = true;
-            ecgParams = null;
-            globalPhase = 0;
-            drawStraightLine();
-            const statusSpan = document.querySelector('.status span');
-            if (statusSpan) statusSpan.innerHTML = `⚡ GREEN SCREEN MODE ⚡`;
+        function onDigitOne() {
+            showCheckmark();
+        }
+        
+        function onDigitTwo() {
+            showArrow();
         }
         
         function handleKeyDown(e) {
@@ -592,15 +807,25 @@
             if (key === 'Space') {
                 e.preventDefault();
                 e.stopPropagation();
-                if (!spacePressed) {
-                    startECGAndFlow();
-                }
+                onSpaceDown();
                 return false;
             }
             else if (key === 'KeyR') {
                 e.preventDefault();
                 e.stopPropagation();
-                forceReset();
+                onRKey();
+                return false;
+            }
+            else if (key === 'Digit1') {
+                e.preventDefault();
+                e.stopPropagation();
+                onDigitOne();
+                return false;
+            }
+            else if (key === 'Digit2') {
+                e.preventDefault();
+                e.stopPropagation();
+                onDigitTwo();
                 return false;
             }
             return true;
@@ -610,15 +835,13 @@
             if (e.code === 'Space') {
                 e.preventDefault();
                 e.stopPropagation();
-                if (spacePressed) resetToLine();
+                onSpaceUp();
                 return false;
             }
             return true;
         }
         
-        function handleBlur() {
-            if (spacePressed) resetToLine();
-        }
+        function handleBlur() {}
         
         function bindEvents() {
             window.addEventListener('keydown', handleKeyDown, true);
@@ -628,40 +851,35 @@
             window.addEventListener('blur', handleBlur);
         }
         
-        // 预热音频: 在页面任意点击时提前创建并挂起上下文，避免空格按下时延迟
         function warmupAudio() {
             initAudio();
             if (audioCtx && audioCtx.state === 'suspended') {
-                audioCtx.resume().then(() => {
-                    console.log("AudioContext warmed up and suspended again?");
-                    // 立即挂起？不，保持活跃即可，但为了节能，可以挂起，但我们不操作
-                }).catch(e=>console.log);
+                audioCtx.resume().catch(e=>console.log);
             }
-            // 移除自身，只需一次
             window.removeEventListener('click', warmupAudio);
             window.removeEventListener('keydown', warmupAudio);
         }
         
         function init() {
             drawStraightLine();
-            isLineMode = true;
-            spacePressed = false;
-            generatedOnPress = false;
+            isWaveActive = false;
+            beepEnabled = false;
             ecgParams = null;
-            globalPhase = 0;
             triggerCount = 0;
+            overlayActive = false;
+            overlayType = null;
+            scanX = -ERASE_WIDTH;
             if (actionCountSpan) actionCountSpan.innerText = `触发:0`;
             bindEvents();
             canvas.addEventListener('click', () => {
                 canvas.style.boxShadow = '0 0 0 2px #6eff6e80';
                 setTimeout(() => { canvas.style.boxShadow = ''; }, 200);
             });
-            // 预先初始化音频但不激活 (避免自动播放策略)
             initAudio();
-            // 用户首次点击或任意键时唤醒音频上下文 (减少延迟)
             window.addEventListener('click', warmupAudio);
             window.addEventListener('keydown', warmupAudio);
-            console.log("✅ 心电图仪 + 持续蜂鸣 | 按住空格：880Hz持续音 + 动态心电图 | 松开停止");
+            startAnimationLoop();
+            console.log("✅ 心电图仪 | 刷新线特效：线后方一段波形隐藏，再后方恢复显示");
         }
         
         window.addEventListener('load', init);
