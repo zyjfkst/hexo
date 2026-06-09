@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>绿屏心电图仪 | 刷新线特效 + 方箭头</title>
+    <title>绿屏心电图仪 | 6键小恶魔 + 刷新线特效</title>
     <style>
         * {
             margin: 0;
@@ -191,12 +191,16 @@
         <div class="key-hint">
             <div class="key"><kbd>␣</kbd> 波形+断续滴滴</div>
             <div class="key"><kbd>R</kbd> 终止+2秒长鸣</div>
-            <div class="key"><kbd>1</kbd> 带圈对号✓</div>
-            <div class="key"><kbd>2</kbd> 方箭头→</div>
+            <div class="key"><kbd>1</kbd> ✓</div>
+            <div class="key"><kbd>2</kbd> →</div>
+            <div class="key"><kbd>3</kbd> ⊗</div>
+            <div class="key"><kbd>4</kbd> ↓</div>
+            <div class="key"><kbd>5</kbd> ←</div>
+            <div class="key"><kbd>6</kbd> 👿</div>
         </div>
     </div>
     <div class="footer">
-        ✦ 刷新线特效：线后方一段波形隐藏，再后方恢复 ✦ 按下空格：动态心电图 + 断续滴滴声 ✦ 按 R 键：停止所有，恢复直线 ✦ 1键对号 / 2键方箭头 ✦
+        ✦ 刷新线特效：线后方一段隐藏，再后方恢复 ✦ 按下空格：动态心电图 + 断续滴滴声 ✦ 按 R 键：停止所有，恢复直线 ✦ 1~6 显示符号 ✦
     </div>
 </div>
 
@@ -229,7 +233,7 @@
         
         // 覆盖层符号显示
         let overlayActive = false;
-        let overlayType = null;
+        let overlayType = null;   // 'checkmark', 'arrow', 'cross', 'downArrow', 'leftArrow', 'demon'
         let overlayEndTime = 0;
         
         // ========== 刷新线特效 ==========
@@ -460,7 +464,6 @@
             return normValue * maxOffset;
         }
         
-        // 获取波形点数组
         function getCurrentWaveformPoints(params, phaseShift) {
             let points = [];
             for (let x = 0; x <= WIDTH; x++) {
@@ -472,23 +475,18 @@
             return points;
         }
         
-        // 绘制带刷新线特效的心电图（线后方一段隐藏）
         function drawECGWaveformWithRefreshLine(params, phaseShift) {
             if (!params) {
                 drawStraightLine();
                 return;
             }
             let points = getCurrentWaveformPoints(params, phaseShift);
-            
-            // 绘制网格
             ctx.clearRect(0, 0, WIDTH, HEIGHT);
             drawGrid();
             
-            // 定义擦除区间：[scanX - ERASE_WIDTH, scanX] 内的波形不显示
             const eraseStart = scanX - ERASE_WIDTH;
             const eraseEnd = scanX;
             
-            // 分段绘制波形：将连续的可显示区域（不在擦除区间内）分成若干路径
             let segments = [];
             let currentSegment = null;
             for (let i = 0; i < points.length; i++) {
@@ -506,11 +504,8 @@
                     }
                 }
             }
-            if (currentSegment !== null) {
-                segments.push(currentSegment);
-            }
+            if (currentSegment !== null) segments.push(currentSegment);
             
-            // 绘制所有可见线段
             ctx.save();
             ctx.beginPath();
             for (let seg of segments) {
@@ -527,7 +522,6 @@
             ctx.shadowBlur = 5;
             ctx.stroke();
             
-            // 高光细线
             ctx.beginPath();
             for (let seg of segments) {
                 let segPoints = seg.points;
@@ -542,7 +536,6 @@
             ctx.shadowBlur = 2;
             ctx.stroke();
             
-            // 端点光点（仅显示可显示的端点）
             for (let seg of segments) {
                 let pts = seg.points;
                 if (pts.length === 0) continue;
@@ -557,7 +550,6 @@
             }
             ctx.restore();
             
-            // 绘制刷新线（垂直亮线）
             ctx.save();
             ctx.shadowBlur = 0;
             ctx.beginPath();
@@ -566,64 +558,59 @@
             ctx.strokeStyle = "#ffffaa";
             ctx.lineWidth = 2;
             ctx.stroke();
-            // 增加光晕
             ctx.beginPath();
             ctx.moveTo(scanX, 0);
             ctx.lineTo(scanX, HEIGHT);
             ctx.strokeStyle = "#ffff88";
             ctx.lineWidth = 1;
             ctx.stroke();
-            // 添加半透明背景强调
             ctx.fillStyle = "#ffffaa20";
             ctx.fillRect(scanX - 1, 0, 3, HEIGHT);
             ctx.restore();
             
-            // 心率文本
             ctx.font = "9px 'Courier New', monospace";
             ctx.fillStyle = "#7eff86";
             let hrText = `❤️ ECG MODE | HR:${Math.floor(60 + params.freq*800)}bpm ❤️`;
             ctx.fillText(hrText, WIDTH-210, HEIGHT-10);
         }
         
-        // 绘制覆盖层（网格+符号）
         function drawOverlay() {
             ctx.clearRect(0, 0, WIDTH, HEIGHT);
             drawGrid();
-            if (overlayType === 'checkmark') {
-                drawCheckmarkOnly();
-            } else if (overlayType === 'arrow') {
-                drawRightArrowOnly();
-            }
+            if (overlayType === 'checkmark') drawCheckmarkOnly();
+            else if (overlayType === 'arrow') drawRightArrowOnly();
+            else if (overlayType === 'cross') drawCrossOnly();
+            else if (overlayType === 'downArrow') drawDownArrowOnly();
+            else if (overlayType === 'leftArrow') drawLeftArrowOnly();
+            else if (overlayType === 'demon') drawDemonOnly();
         }
         
         function drawCheckmarkOnly() {
-            const centerX = WIDTH / 2;
-            const centerY = HEIGHT / 2;
-            const radius = 60;
+            const centerX = WIDTH/2, centerY = HEIGHT/2, radius = 60;
             ctx.save();
             ctx.shadowBlur = 0;
             ctx.beginPath();
-            ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+            ctx.arc(centerX, centerY, radius, 0, Math.PI*2);
             ctx.strokeStyle = "#5eff6e";
             ctx.lineWidth = 4;
             ctx.stroke();
             ctx.beginPath();
-            ctx.arc(centerX, centerY, radius-2, 0, Math.PI * 2);
+            ctx.arc(centerX, centerY, radius-2, 0, Math.PI*2);
             ctx.strokeStyle = "#aaffaa";
             ctx.lineWidth = 1.5;
             ctx.stroke();
             ctx.beginPath();
             const offset = 28;
-            ctx.moveTo(centerX - offset, centerY);
-            ctx.lineTo(centerX - 8, centerY + offset - 5);
-            ctx.lineTo(centerX + offset - 5, centerY - offset + 8);
+            ctx.moveTo(centerX-offset, centerY);
+            ctx.lineTo(centerX-8, centerY+offset-5);
+            ctx.lineTo(centerX+offset-5, centerY-offset+8);
             ctx.strokeStyle = "#cfff9e";
             ctx.lineWidth = 5;
             ctx.lineCap = 'round';
             ctx.lineJoin = 'round';
             ctx.stroke();
             ctx.beginPath();
-            ctx.arc(centerX, centerY, radius-8, 0, Math.PI * 2);
+            ctx.arc(centerX, centerY, radius-8, 0, Math.PI*2);
             ctx.strokeStyle = "#2eff6e30";
             ctx.lineWidth = 2;
             ctx.stroke();
@@ -631,32 +618,214 @@
         }
         
         function drawRightArrowOnly() {
-            const centerX = WIDTH / 2;
-            const centerY = HEIGHT / 2;
-            const arrowLength = 130;
-            const stemWidth = 22;
-            const headWidth = 52;
-            const headDepth = 38;
+            const cx = WIDTH/2, cy = HEIGHT/2;
+            const len = 130, stemW = 22, headW = 52, headD = 38;
             ctx.save();
             ctx.shadowBlur = 0;
-            const startX = centerX - arrowLength/2 + 8;
-            const stemEndX = centerX + arrowLength/2 - headDepth;
+            const startX = cx - len/2 + 8;
+            const stemEndX = cx + len/2 - headD;
             ctx.fillStyle = "#5eff6e";
-            ctx.fillRect(startX, centerY - stemWidth/2, stemEndX - startX, stemWidth);
+            ctx.fillRect(startX, cy - stemW/2, stemEndX - startX, stemW);
             ctx.beginPath();
-            ctx.moveTo(stemEndX, centerY - headWidth/2);
-            ctx.lineTo(centerX + arrowLength/2, centerY);
-            ctx.lineTo(stemEndX, centerY + headWidth/2);
+            ctx.moveTo(stemEndX, cy - headW/2);
+            ctx.lineTo(cx + len/2, cy);
+            ctx.lineTo(stemEndX, cy + headW/2);
             ctx.fill();
             ctx.fillStyle = "#aaffaa";
-            ctx.fillRect(startX + 4, centerY - stemWidth/2 + 3, stemEndX - startX - 8, stemWidth - 6);
+            ctx.fillRect(startX+4, cy - stemW/2 + 3, stemEndX - startX - 8, stemW - 6);
             ctx.beginPath();
-            ctx.moveTo(stemEndX + 2, centerY - headWidth/2 + 5);
-            ctx.lineTo(centerX + arrowLength/2 - 2, centerY);
-            ctx.lineTo(stemEndX + 2, centerY + headWidth/2 - 5);
+            ctx.moveTo(stemEndX+2, cy - headW/2 + 5);
+            ctx.lineTo(cx + len/2 - 2, cy);
+            ctx.lineTo(stemEndX+2, cy + headW/2 - 5);
             ctx.fill();
             ctx.fillStyle = "#8effa0";
-            ctx.fillRect(startX - 6, centerY - 12, 12, 24);
+            ctx.fillRect(startX-6, cy-12, 12, 24);
+            ctx.restore();
+        }
+        
+        function drawCrossOnly() {
+            const cx = WIDTH/2, cy = HEIGHT/2, r = 60, sz = 42;
+            ctx.save();
+            ctx.shadowBlur = 0;
+            ctx.beginPath();
+            ctx.arc(cx, cy, r, 0, Math.PI*2);
+            ctx.strokeStyle = "#5eff6e";
+            ctx.lineWidth = 4;
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.arc(cx, cy, r-2, 0, Math.PI*2);
+            ctx.strokeStyle = "#aaffaa";
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(cx-sz, cy-sz);
+            ctx.lineTo(cx+sz, cy+sz);
+            ctx.moveTo(cx+sz, cy-sz);
+            ctx.lineTo(cx-sz, cy+sz);
+            ctx.strokeStyle = "#cfff9e";
+            ctx.lineWidth = 6;
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(cx-sz+2, cy-sz+2);
+            ctx.lineTo(cx+sz-2, cy+sz-2);
+            ctx.moveTo(cx+sz-2, cy-sz+2);
+            ctx.lineTo(cx-sz+2, cy+sz-2);
+            ctx.strokeStyle = "#ffffaa";
+            ctx.lineWidth = 2.5;
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.arc(cx, cy, r-8, 0, Math.PI*2);
+            ctx.strokeStyle = "#2eff6e30";
+            ctx.lineWidth = 2;
+            ctx.stroke();
+            ctx.restore();
+        }
+        
+        function drawDownArrowOnly() {
+            const cx = WIDTH/2, cy = HEIGHT/2;
+            const len = 110, stemW = 22, headW = 52, headD = 38;
+            ctx.save();
+            ctx.shadowBlur = 0;
+            const startY = cy - len/2 + 8;
+            const stemEndY = cy + len/2 - headD;
+            ctx.fillStyle = "#5eff6e";
+            ctx.fillRect(cx - stemW/2, startY, stemW, stemEndY - startY);
+            ctx.beginPath();
+            ctx.moveTo(cx - headW/2, stemEndY);
+            ctx.lineTo(cx, cy + len/2);
+            ctx.lineTo(cx + headW/2, stemEndY);
+            ctx.fill();
+            ctx.fillStyle = "#aaffaa";
+            ctx.fillRect(cx - stemW/2 + 4, startY+3, stemW-8, stemEndY - startY - 6);
+            ctx.beginPath();
+            ctx.moveTo(cx - headW/2 + 5, stemEndY+2);
+            ctx.lineTo(cx, cy + len/2 - 2);
+            ctx.lineTo(cx + headW/2 - 5, stemEndY+2);
+            ctx.fill();
+            ctx.fillStyle = "#8effa0";
+            ctx.fillRect(cx-12, startY-6, 24, 12);
+            ctx.restore();
+        }
+        
+        function drawLeftArrowOnly() {
+            const cx = WIDTH/2, cy = HEIGHT/2;
+            const len = 130, stemW = 22, headW = 52, headD = 38;
+            ctx.save();
+            ctx.shadowBlur = 0;
+            const startX = cx + len/2 - 8;
+            const stemEndX = cx - len/2 + headD;
+            ctx.fillStyle = "#5eff6e";
+            ctx.fillRect(stemEndX, cy - stemW/2, startX - stemEndX, stemW);
+            ctx.beginPath();
+            ctx.moveTo(stemEndX, cy - headW/2);
+            ctx.lineTo(cx - len/2, cy);
+            ctx.lineTo(stemEndX, cy + headW/2);
+            ctx.fill();
+            ctx.fillStyle = "#aaffaa";
+            ctx.fillRect(stemEndX+4, cy - stemW/2 + 3, startX - stemEndX - 8, stemW - 6);
+            ctx.beginPath();
+            ctx.moveTo(stemEndX-2, cy - headW/2 + 5);
+            ctx.lineTo(cx - len/2 + 2, cy);
+            ctx.lineTo(stemEndX-2, cy + headW/2 - 5);
+            ctx.fill();
+            ctx.fillStyle = "#8effa0";
+            ctx.fillRect(startX-6, cy-12, 12, 24);
+            ctx.restore();
+        }
+        
+        // 绘制小恶魔（线条风格，绿光）
+        function drawDemonOnly() {
+            const cx = WIDTH/2, cy = HEIGHT/2;
+            ctx.save();
+            ctx.shadowBlur = 0;
+            ctx.strokeStyle = "#5eff6e";
+            ctx.fillStyle = "#5eff6e";
+            ctx.lineWidth = 2.5;
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+            
+            // 头部外轮廓（类似倒三角+圆润）
+            ctx.beginPath();
+            ctx.ellipse(cx, cy-10, 45, 50, 0, 0, Math.PI*2);
+            ctx.stroke();
+            
+            // 两只角
+            ctx.beginPath();
+            ctx.moveTo(cx-25, cy-50);
+            ctx.lineTo(cx-38, cy-75);
+            ctx.lineTo(cx-18, cy-60);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(cx+25, cy-50);
+            ctx.lineTo(cx+38, cy-75);
+            ctx.lineTo(cx+18, cy-60);
+            ctx.stroke();
+            
+            // 尖耳朵
+            ctx.beginPath();
+            ctx.moveTo(cx-40, cy-45);
+            ctx.lineTo(cx-60, cy-65);
+            ctx.lineTo(cx-45, cy-30);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(cx+40, cy-45);
+            ctx.lineTo(cx+60, cy-65);
+            ctx.lineTo(cx+45, cy-30);
+            ctx.stroke();
+            
+            // 眼睛（两个圆圈，带瞳孔点）
+            ctx.beginPath();
+            ctx.arc(cx-20, cy-20, 10, 0, Math.PI*2);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.arc(cx+20, cy-20, 10, 0, Math.PI*2);
+            ctx.stroke();
+            ctx.fillStyle = "#aaffaa";
+            ctx.beginPath();
+            ctx.arc(cx-22, cy-22, 3, 0, Math.PI*2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(cx+18, cy-22, 3, 0, Math.PI*2);
+            ctx.fill();
+            
+            // 眉毛（邪恶斜线）
+            ctx.beginPath();
+            ctx.moveTo(cx-30, cy-38);
+            ctx.lineTo(cx-10, cy-34);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(cx+30, cy-38);
+            ctx.lineTo(cx+10, cy-34);
+            ctx.stroke();
+            
+            // 嘴巴（咧嘴笑带尖牙）
+            ctx.beginPath();
+            ctx.arc(cx, cy+5, 22, 0.1, Math.PI - 0.1);
+            ctx.stroke();
+            // 尖牙
+            ctx.beginPath();
+            ctx.moveTo(cx-12, cy+12);
+            ctx.lineTo(cx-8, cy+22);
+            ctx.lineTo(cx-4, cy+12);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.moveTo(cx+12, cy+12);
+            ctx.lineTo(cx+8, cy+22);
+            ctx.lineTo(cx+4, cy+12);
+            ctx.fill();
+            
+            // 胡须/恶魔纹
+            ctx.beginPath();
+            ctx.moveTo(cx-42, cy-5);
+            ctx.lineTo(cx-55, cy-2);
+            ctx.lineTo(cx-42, cy+2);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(cx+42, cy-5);
+            ctx.lineTo(cx+55, cy-2);
+            ctx.lineTo(cx+42, cy+2);
+            ctx.stroke();
+            
             ctx.restore();
         }
         
@@ -673,7 +842,6 @@
             return { freq, rAmp, tAmp, pAmp, qsAmp, baselineDrift, ampScale };
         }
         
-        // 动画循环
         function startAnimationLoop() {
             if (animationId !== null) return;
             function animate(now) {
@@ -684,32 +852,21 @@
                 }
                 lastTimestamp = now;
                 
-                // 更新刷新线位置（仅在波形活跃且无覆盖层时移动）
                 if (isWaveActive && ecgParams && !overlayActive) {
                     scanX += SCAN_SPEED;
-                    if (scanX > WIDTH + ERASE_WIDTH) {
-                        scanX = -ERASE_WIDTH; // 循环回到左侧外
-                    }
+                    if (scanX > WIDTH + ERASE_WIDTH) scanX = -ERASE_WIDTH;
                 } else {
-                    // 非波形模式，线移到左侧外
                     if (scanX > WIDTH) scanX = -ERASE_WIDTH;
                 }
                 
                 if (overlayActive) {
-                    if (now < overlayEndTime) {
-                        drawOverlay();
-                    } else {
-                        overlayActive = false;
-                        overlayType = null;
-                    }
+                    if (now < overlayEndTime) drawOverlay();
+                    else { overlayActive = false; overlayType = null; }
                 }
                 
                 if (!overlayActive) {
-                    if (isWaveActive && ecgParams) {
-                        drawECGWaveformWithRefreshLine(ecgParams, globalPhase);
-                    } else {
-                        drawStraightLine();
-                    }
+                    if (isWaveActive && ecgParams) drawECGWaveformWithRefreshLine(ecgParams, globalPhase);
+                    else drawStraightLine();
                 }
                 
                 animationId = requestAnimationFrame(animate);
@@ -717,40 +874,23 @@
             animationId = requestAnimationFrame(animate);
         }
         
-        function clearOverlay() {
-            overlayActive = false;
-            overlayType = null;
-        }
+        function clearOverlay() { overlayActive = false; overlayType = null; }
         
-        function showCheckmark() {
-            clearOverlay();
-            overlayActive = true;
-            overlayType = 'checkmark';
-            overlayEndTime = performance.now() + 1500;
-            const statusSpan = document.querySelector('.status span');
-            if (statusSpan) {
-                statusSpan.innerHTML = `✓ CHECKMARK ✓`;
-                setTimeout(() => {
-                    if (statusSpan && !overlayActive) {
-                        if (isWaveActive) statusSpan.innerHTML = `❤️ ECG + CONTINUOUS BEEP ❤️`;
-                        else if (!isWaveActive && !beepEnabled) statusSpan.innerHTML = `⚡ GREEN SCREEN MODE ⚡`;
-                    }
-                }, 1200);
-            }
-        }
+        function showCheckmark() { clearOverlay(); overlayActive = true; overlayType = 'checkmark'; overlayEndTime = performance.now()+1500; updateStatus("✓ CHECKMARK ✓"); }
+        function showRightArrow() { clearOverlay(); overlayActive = true; overlayType = 'arrow'; overlayEndTime = performance.now()+1500; updateStatus("→ RIGHT ARROW →"); }
+        function showCross() { clearOverlay(); overlayActive = true; overlayType = 'cross'; overlayEndTime = performance.now()+1500; updateStatus("⊗ CROSS ⊗"); }
+        function showDownArrow() { clearOverlay(); overlayActive = true; overlayType = 'downArrow'; overlayEndTime = performance.now()+1500; updateStatus("↓ DOWN ARROW ↓"); }
+        function showLeftArrow() { clearOverlay(); overlayActive = true; overlayType = 'leftArrow'; overlayEndTime = performance.now()+1500; updateStatus("← LEFT ARROW ←"); }
+        function showDemon() { clearOverlay(); overlayActive = true; overlayType = 'demon'; overlayEndTime = performance.now()+1500; updateStatus("👿 LITTLE DEMON 👿"); }
         
-        function showArrow() {
-            clearOverlay();
-            overlayActive = true;
-            overlayType = 'arrow';
-            overlayEndTime = performance.now() + 1500;
-            const statusSpan = document.querySelector('.status span');
-            if (statusSpan) {
-                statusSpan.innerHTML = `→ SQUARE ARROW →`;
+        function updateStatus(text) {
+            const span = document.querySelector('.status span');
+            if (span) {
+                span.innerHTML = text;
                 setTimeout(() => {
-                    if (statusSpan && !overlayActive) {
-                        if (isWaveActive) statusSpan.innerHTML = `❤️ ECG + CONTINUOUS BEEP ❤️`;
-                        else if (!isWaveActive && !beepEnabled) statusSpan.innerHTML = `⚡ GREEN SCREEN MODE ⚡`;
+                    if (span && !overlayActive) {
+                        if (isWaveActive) span.innerHTML = `❤️ ECG + CONTINUOUS BEEP ❤️`;
+                        else if (!isWaveActive && !beepEnabled) span.innerHTML = `⚡ GREEN SCREEN MODE ⚡`;
                     }
                 }, 1200);
             }
@@ -764,18 +904,11 @@
             lastTimestamp = performance.now();
             incrementTriggerCount();
             if (!animationId) startAnimationLoop();
-            if (!beepEnabled) {
-                beepEnabled = true;
-                startIntermittentBeep();
-            }
-            const statusSpan = document.querySelector('.status span');
-            if (statusSpan) statusSpan.innerHTML = `❤️ ECG + CONTINUOUS BEEP ❤️`;
+            if (!beepEnabled) { beepEnabled = true; startIntermittentBeep(); }
+            const span = document.querySelector('.status span');
+            if (span) span.innerHTML = `❤️ ECG + CONTINUOUS BEEP ❤️`;
         }
-        
-        function onSpaceUp() {
-            // 保持状态
-        }
-        
+        function onSpaceUp() {}
         function onRKey() {
             clearOverlay();
             beepEnabled = false;
@@ -785,64 +918,33 @@
             globalPhase = 0;
             drawStraightLine();
             playContinuousBeep2Seconds();
-            const statusSpan = document.querySelector('.status span');
-            if (statusSpan) statusSpan.innerHTML = `⚠️ 2s BEEP → LINE ⚠️`;
+            const span = document.querySelector('.status span');
+            if (span) span.innerHTML = `⚠️ 2s BEEP → LINE ⚠️`;
             setTimeout(() => {
-                if (statusSpan && !isWaveActive && !beepEnabled && !overlayActive) {
-                    statusSpan.innerHTML = `⚡ GREEN SCREEN MODE ⚡`;
-                }
+                if (span && !isWaveActive && !beepEnabled && !overlayActive) span.innerHTML = `⚡ GREEN SCREEN MODE ⚡`;
             }, 2100);
         }
-        
-        function onDigitOne() {
-            showCheckmark();
-        }
-        
-        function onDigitTwo() {
-            showArrow();
-        }
+        function onDigitOne() { showCheckmark(); }
+        function onDigitTwo() { showRightArrow(); }
+        function onDigitThree() { showCross(); }
+        function onDigitFour() { showDownArrow(); }
+        function onDigitFive() { showLeftArrow(); }
+        function onDigitSix() { showDemon(); }
         
         function handleKeyDown(e) {
             const key = e.code;
-            if (key === 'Space') {
-                e.preventDefault();
-                e.stopPropagation();
-                onSpaceDown();
-                return false;
-            }
-            else if (key === 'KeyR') {
-                e.preventDefault();
-                e.stopPropagation();
-                onRKey();
-                return false;
-            }
-            else if (key === 'Digit1') {
-                e.preventDefault();
-                e.stopPropagation();
-                onDigitOne();
-                return false;
-            }
-            else if (key === 'Digit2') {
-                e.preventDefault();
-                e.stopPropagation();
-                onDigitTwo();
-                return false;
-            }
+            if (key === 'Space') { e.preventDefault(); e.stopPropagation(); onSpaceDown(); return false; }
+            else if (key === 'KeyR') { e.preventDefault(); e.stopPropagation(); onRKey(); return false; }
+            else if (key === 'Digit1') { e.preventDefault(); e.stopPropagation(); onDigitOne(); return false; }
+            else if (key === 'Digit2') { e.preventDefault(); e.stopPropagation(); onDigitTwo(); return false; }
+            else if (key === 'Digit3') { e.preventDefault(); e.stopPropagation(); onDigitThree(); return false; }
+            else if (key === 'Digit4') { e.preventDefault(); e.stopPropagation(); onDigitFour(); return false; }
+            else if (key === 'Digit5') { e.preventDefault(); e.stopPropagation(); onDigitFive(); return false; }
+            else if (key === 'Digit6') { e.preventDefault(); e.stopPropagation(); onDigitSix(); return false; }
             return true;
         }
-        
-        function handleKeyUp(e) {
-            if (e.code === 'Space') {
-                e.preventDefault();
-                e.stopPropagation();
-                onSpaceUp();
-                return false;
-            }
-            return true;
-        }
-        
+        function handleKeyUp(e) { if (e.code === 'Space') { e.preventDefault(); e.stopPropagation(); onSpaceUp(); return false; } return true; }
         function handleBlur() {}
-        
         function bindEvents() {
             window.addEventListener('keydown', handleKeyDown, true);
             document.addEventListener('keydown', handleKeyDown, true);
@@ -850,38 +952,25 @@
             document.addEventListener('keyup', handleKeyUp, true);
             window.addEventListener('blur', handleBlur);
         }
-        
         function warmupAudio() {
             initAudio();
-            if (audioCtx && audioCtx.state === 'suspended') {
-                audioCtx.resume().catch(e=>console.log);
-            }
+            if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume().catch(e=>console.log);
             window.removeEventListener('click', warmupAudio);
             window.removeEventListener('keydown', warmupAudio);
         }
-        
         function init() {
             drawStraightLine();
-            isWaveActive = false;
-            beepEnabled = false;
-            ecgParams = null;
-            triggerCount = 0;
-            overlayActive = false;
-            overlayType = null;
-            scanX = -ERASE_WIDTH;
+            isWaveActive = false; beepEnabled = false; ecgParams = null; triggerCount = 0;
+            overlayActive = false; overlayType = null; scanX = -ERASE_WIDTH;
             if (actionCountSpan) actionCountSpan.innerText = `触发:0`;
             bindEvents();
-            canvas.addEventListener('click', () => {
-                canvas.style.boxShadow = '0 0 0 2px #6eff6e80';
-                setTimeout(() => { canvas.style.boxShadow = ''; }, 200);
-            });
+            canvas.addEventListener('click', () => { canvas.style.boxShadow = '0 0 0 2px #6eff6e80'; setTimeout(()=>canvas.style.boxShadow='',200); });
             initAudio();
             window.addEventListener('click', warmupAudio);
             window.addEventListener('keydown', warmupAudio);
             startAnimationLoop();
-            console.log("✅ 心电图仪 | 刷新线特效：线后方一段波形隐藏，再后方恢复显示");
+            console.log("✅ 心电图仪 | 刷新线特效 + 6键小恶魔");
         }
-        
         window.addEventListener('load', init);
     })();
 </script>
