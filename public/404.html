@@ -359,6 +359,29 @@
     
 
     
+      <div class="col-lg-7 mx-auto nopadding-x-md">
+        <div class="container custom mx-auto">
+          <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/aplayer/dist/APlayer.min.css">
+<div id="aplayer"></div>
+<script src="https://cdn.jsdelivr.net/npm/aplayer/dist/APlayer.min.js"></script>
+<script>
+  var ap = new APlayer({
+    container: document.getElementById('aplayer'),
+    fixed: true,
+    autoplay: true,
+    loop: 'all',
+    audio: [{
+      name: "lazzzzzzzzy",
+      artist: "Toby Dog",
+      url: "/music/lazybone.mp3",
+      cover: "/images/cover.jpg"
+    }]
+  });
+</script>
+
+        </div>
+      </div>
+    
   </main>
 
   <footer>
@@ -422,6 +445,11 @@
   <script  src="/js/local-search.js" ></script>
 
 
+
+
+  
+<script src="//cdn.jsdelivr.net/npm/aplayer/dist/APlayer.min.js"></script>
+<script src="//cdn.jsdelivr.net/gh/metowolf/MetingJS@1.2/dist/Meting.min.js"></script>
 
 
 
