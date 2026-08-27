@@ -234,7 +234,8 @@ font:
 # 指定自定义 .js 文件路径，支持列表；路径是相对 source 目录，如 /js/custom.js 对应存放目录 source/js/custom.js
 # Specify the path of your custom js file, support list. The path is relative to the source directory, such as `/js/custom.js` corresponding to the directory `source/js/custom.js`
 custom_js:
-
+  - //cdn.jsdelivr.net/npm/aplayer/dist/APlayer.min.js
+  - //cdn.jsdelivr.net/gh/metowolf/MetingJS@1.2/dist/Meting.min.js
 # 指定自定义 .css 文件路径，用法和 custom_js 相同
 # The usage is the same as custom_js
 custom_css:
@@ -1040,8 +1041,24 @@ page404:
   # 重定向到首页的延迟(毫秒)
   # Delay in redirecting to home page (milliseconds)
   redirect_delay: 5000
-
-
+custom_html: |
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/aplayer/dist/APlayer.min.css">
+  <div id="aplayer"></div>
+  <script src="https://cdn.jsdelivr.net/npm/aplayer/dist/APlayer.min.js"></script>
+  <script>
+    var ap = new APlayer({
+      container: document.getElementById('aplayer'),
+      fixed: true,
+      autoplay: true,
+      loop: 'all',
+      audio: [{
+        name: "lazzzzzzzzy",
+        artist: "Toby Dog",
+        url: "/music/lazybone.mp3",
+        cover: "/images/cover.jpg"
+      }]
+    });
+  </script>
 #---------------------------
 # 友链页
 # Links Page
@@ -1153,3 +1170,6 @@ static_prefix:
   hint: https://lib.baomitu.com/hint.css/2.7.0/
 
   moment: https://lib.baomitu.com/moment.js/2.29.4/
+  custom_css:
+  - //cdn.jsdelivr.net/npm/aplayer/dist/APlayer.min.css
+
